@@ -84,17 +84,6 @@ Panel {
             if (buttonCode === Qt.LeftButton) root.activate("process")
           }
         }
-
-        WidgetButton {
-          width: parent.width
-          height: Style.space(32)
-          bar: root.bar
-          text: "󰨇  Task manager (btop)"
-          tooltipText: "Monitor processes and resource usage"
-          onPressed: function(buttonCode) {
-            if (buttonCode === Qt.LeftButton) root.activate("tasks")
-          }
-        }
       }
     }
   }

@@ -52,8 +52,6 @@ BarWidget {
       Quickshell.execDetached([root.binDir + "/omarchy-kill-window"])
     } else if (action === "process") {
       Quickshell.execDetached([root.binDir + "/omarchy-kill-process"])
-    } else if (action === "tasks") {
-      Quickshell.execDetached(["omarchy-launch-tui", "btop"])
     }
   }
 

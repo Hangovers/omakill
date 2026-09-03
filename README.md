@@ -9,7 +9,6 @@ panel: click-to-kill, window picker, and process picker with live CPU/MEM.
 * **Process** — pick a process with **live** CPU/MEM
   (btop-style `/proc` sampling, top-200 by memory, TERM→KILL escalation,
   PID 1/self guards, confirm step)
-* **Task manager (btop)** — full live view
 
 ## Install
 
@@ -20,13 +19,13 @@ omarchy plugin add https://github.com/hangovers/omakill.git --enable
 This puts the skull button in the bar (right section). Click it for the
 kill panel, Escape closes it.
 
-Requirements: Omarchy Quattro, `hyprctl`, `jq`. `btop` for the Task
-manager row.
+Requirements: Omarchy Quattro, `hyprctl`, `jq` — all stock. No extra
+packages, no background services.
 
 ## Trigger menu (optional)
 
 Prefer `SUPER+SPACE → kill` over the bar button? This repo also ships the
-same four actions as a `Trigger › Kill` submenu:
+same three actions as a `Trigger › Kill` submenu:
 
 ```sh
 git clone https://github.com/hangovers/omakill.git
@@ -38,7 +37,7 @@ Idempotent: merges a marked block into
 `~/.config/omarchy/extensions/omarchy-menu.jsonc` (your other entries and
 comments are untouched) and copies the two helper commands to
 `~/.local/bin` (existing files are backed up first). Searching `kill`
-shows only the `Kill` parent; enter it for the four actions.
+shows only the `Kill` parent; enter it for the three actions.
 
 ## Remove
 

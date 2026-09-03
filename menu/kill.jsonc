@@ -4,6 +4,5 @@
   "trigger.kill": {"icon":"󰭌","label":"Kill","description":"Force-close a frozen app","aliases":["kill","force-close","xkill"]},
   "trigger.kill.click": {"icon":"󰍉","label":"By clicking","action":"omarchy-notification-send \"Kill\" \"Click a window to kill — ESC to cancel\" -g 󰍉; hyprctl kill","description":"Click any window to force-close it","aliases":["click","by-clicking"]},
   "trigger.kill.window": {"icon":"󰀻","label":"Window","when":"hyprctl clients -j 2>/dev/null | jq -e 'length > 0' >/dev/null","action":"omarchy-kill-window","description":"Pick an open window to close","aliases":["window","close-window","pick-window"]},
-  "trigger.kill.process": {"icon":"󰋊","label":"Process","action":"omarchy-kill-process","description":"Pick a process to terminate","aliases":["process","end-task","terminate-process"]},
-  "trigger.kill.tasks": {"icon":"󰨇","label":"Task manager (btop)","action":"omarchy-launch-tui btop","description":"Monitor processes and resource usage","aliases":["btop","task-manager-btop","monitor"]}
+  "trigger.kill.process": {"icon":"󰋊","label":"Process","action":"omarchy-kill-process","description":"Pick a process to terminate","aliases":["process","end-task","terminate-process"]}
   // <<< omakill <<<
