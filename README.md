@@ -1,53 +1,64 @@
-# omarchy-kill
+# Omakill
 
-Kill submenu for the Omarchy menu (`SUPER+SPACE → kill`), plus the two
-commands behind it. English only.
+Force-close frozen apps from the Omarchy bar. A skull button with a kill
+panel: click-to-kill, window picker, and process picker with live CPU/MEM.
 
-* **Trigger › Kill › By clicking** — `hyprctl kill` xkill-style with a hint toast
-* **Trigger › Kill › Window** — pick an open window from the native menu
+* **By clicking** — `hyprctl kill` xkill-style with a hint toast
+* **Window** — pick an open window from the native menu
   (shows class/title + workspace/PID, no raw addresses)
-* **Trigger › Kill › Process** — pick a process with **live** CPU/MEM
+* **Process** — pick a process with **live** CPU/MEM
   (btop-style `/proc` sampling, top-200 by memory, TERM→KILL escalation,
   PID 1/self guards, confirm step)
-* **Trigger › Kill › Task manager (btop)** — full live view
-
-Searching `kill` shows only the `Kill` parent; enter it for the four actions.
+* **Task manager (btop)** — full live view
 
 ## Install
 
-```bash
-git clone <this-repo-url> omarchy-kill
-cd omarchy-kill
+```sh
+omarchy plugin add https://github.com/hangovers/omakill.git --enable
+```
+
+This puts the skull button in the bar (right section). Click it for the
+kill panel, Escape closes it.
+
+Requirements: Omarchy Quattro, `hyprctl`, `jq`. `btop` for the Task
+manager row.
+
+## Trigger menu (optional)
+
+Prefer `SUPER+SPACE → kill` over the bar button? This repo also ships the
+same four actions as a `Trigger › Kill` submenu:
+
+```sh
+git clone https://github.com/hangovers/omakill.git
+cd omakill
 ./install.sh
 ```
 
-What it does (idempotent, re-run anytime):
+Idempotent: merges a marked block into
+`~/.config/omarchy/extensions/omarchy-menu.jsonc` (your other entries and
+comments are untouched) and copies the two helper commands to
+`~/.local/bin` (existing files are backed up first). Searching `kill`
+shows only the `Kill` parent; enter it for the four actions.
 
-1. Copies `bin/omarchy-kill-window` and `bin/omarchy-kill-process` to
-   `~/.local/bin` (existing different files are backed up to
-   `*.bak.omarchy-kill` first).
-2. Merges the `Trigger › Kill` block into
-   `~/.config/omarchy/extensions/omarchy-menu.jsonc` inside clearly marked
-   comments — your other entries and comments are left untouched.
-3. Runs `omarchy menu refresh`.
+## Remove
 
-Requirements: Omarchy (Quattro menu), `hyprctl`, `jq`. `btop` for the Task
-manager row.
+```sh
+omarchy plugin remove io.github.hangovers.omakill
+```
 
-## Uninstall
+and, if you installed the Trigger menu:
 
-```bash
+```sh
 ./uninstall.sh
 ```
 
-Removes the menu block and the two commands (restoring backups when the
-installer made them), then refreshes the menu.
+## How it works
 
-## Why not a shell plugin?
-
-Omarchy shell plugins (`omarchy plugin add …`) are Quickshell QML widgets
-for the bar/panels/overlays. This pack integrates with the existing Omarchy
-menu instead, so it ships as a tiny installer with no long-running code.
+The QML panel is a thin launcher: the bundled helpers in `bin/` do the
+real work and summon Omarchy's native menus themselves, so there is no
+duplicated picker logic. No background services, no config writes —
+removing the plugin leaves nothing behind (except the optional Trigger
+block, removed by `./uninstall.sh`).
 
 ## License
 

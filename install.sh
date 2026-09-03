@@ -1,12 +1,12 @@
 #!/bin/bash
-# Installs the omarchy-kill menu + commands. Idempotent — safe to re-run.
+# Installs the omakill Trigger menu + commands. Idempotent — safe to re-run.
 set -euo pipefail
 
 REPO_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 BIN_DST="$HOME/.local/bin"
 MENU_FILE="$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"
-MARK_BEGIN='// >>> omarchy-kill'
-MARK_END='// <<< omarchy-kill'
+MARK_BEGIN='// >>> omakill'
+MARK_END='// <<< omakill'
 
 missing=()
 for cmd in hyprctl jq; do
@@ -21,8 +21,8 @@ fi
 mkdir -p "$BIN_DST"
 for bin in omarchy-kill-window omarchy-kill-process; do
   if [[ -f "$BIN_DST/$bin" ]] && ! cmp -s "$REPO_DIR/bin/$bin" "$BIN_DST/$bin"; then
-    [[ -f "$BIN_DST/$bin.bak.omarchy-kill" ]] || cp "$BIN_DST/$bin" "$BIN_DST/$bin.bak.omarchy-kill"
-    echo "Backed up existing $bin to $bin.bak.omarchy-kill"
+    [[ -f "$BIN_DST/$bin.bak.omakill" ]] || cp "$BIN_DST/$bin" "$BIN_DST/$bin.bak.omakill"
+    echo "Backed up existing $bin to $bin.bak.omakill"
   fi
   cp "$REPO_DIR/bin/$bin" "$BIN_DST/$bin"
   chmod +x "$BIN_DST/$bin"

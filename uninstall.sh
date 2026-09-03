@@ -5,8 +5,8 @@ set -euo pipefail
 REPO_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 BIN_DST="$HOME/.local/bin"
 MENU_FILE="$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"
-MARK_BEGIN='// >>> omarchy-kill'
-MARK_END='// <<< omarchy-kill'
+MARK_BEGIN='// >>> omakill'
+MARK_END='// <<< omakill'
 
 for bin in omarchy-kill-window omarchy-kill-process; do
   if [[ -f "$BIN_DST/$bin" ]]; then
@@ -17,8 +17,8 @@ for bin in omarchy-kill-window omarchy-kill-process; do
       echo "Kept $BIN_DST/$bin (differs from this repo — not ours to delete)"
     fi
   fi
-  if [[ -f "$BIN_DST/$bin.bak.omarchy-kill" ]]; then
-    mv "$BIN_DST/$bin.bak.omarchy-kill" "$BIN_DST/$bin"
+  if [[ -f "$BIN_DST/$bin.bak.omakill" ]]; then
+    mv "$BIN_DST/$bin.bak.omakill" "$BIN_DST/$bin"
     echo "Restored $bin from backup"
   fi
 done

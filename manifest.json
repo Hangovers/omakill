@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.hangovers.omakill",
+  "name": "Omakill",
+  "version": "1.0.0",
+  "author": "hangovers",
+  "license": "MIT",
+  "description": "Force-close frozen apps from the bar: click-to-kill, window and process pickers.",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Omakill",
+    "description": "Kill menu for frozen apps (click, window, process).",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

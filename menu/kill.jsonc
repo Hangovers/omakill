@@ -1,4 +1,4 @@
-  // >>> omarchy-kill (managed by install.sh — do not edit by hand) >>>
+  // >>> omakill (managed by install.sh — do not edit by hand) >>>
   // Kill / terminate programs (searchable with SUPER+SPACE -> "kill").
   // Subsection under Trigger: Trigger > Kill.
   "trigger.kill": {"icon":"󰭌","label":"Kill","description":"Force-close a frozen app","aliases":["kill","force-close","xkill"]},
@@ -6,4 +6,4 @@
   "trigger.kill.window": {"icon":"󰀻","label":"Window","when":"hyprctl clients -j 2>/dev/null | jq -e 'length > 0' >/dev/null","action":"omarchy-kill-window","description":"Pick an open window to close","aliases":["window","close-window","pick-window"]},
   "trigger.kill.process": {"icon":"󰋊","label":"Process","action":"omarchy-kill-process","description":"Pick a process to terminate","aliases":["process","end-task","terminate-process"]},
   "trigger.kill.tasks": {"icon":"󰨇","label":"Task manager (btop)","action":"omarchy-launch-tui btop","description":"Monitor processes and resource usage","aliases":["btop","task-manager-btop","monitor"]}
-  // <<< omarchy-kill <<<
+  // <<< omakill <<<
