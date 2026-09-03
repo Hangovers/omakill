@@ -100,8 +100,8 @@ fi
 if kill -0 "$pid" 2>/dev/null; then
   omarchy-notification-send "Kill" "$comm ($pid) not responding, using KILL" -g 󰋊 2>/dev/null || true
   if ! kill -KILL "$pid" 2>/dev/null; then
-    omarchy-notification-send "Kill" "Cannot kill $pid (permissions?). Try with sudo." -g 󰋊 2>/dev/null || true
-    echo "Cannot kill $pid (permissions?). Try with sudo." >&2
+    omarchy-notification-send "Kill" "Permission denied for $pid (another user's process?)" -g 󰋊 2>/dev/null || true
+    echo "Permission denied for $pid (another user's process?)." >&2
     exit 1
   fi
   sleep 0.3

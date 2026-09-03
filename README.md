@@ -24,13 +24,11 @@ packages, no background services.
 
 ## Trigger menu (optional)
 
-Prefer `SUPER+SPACE → kill` over the bar button? This repo also ships the
-same three actions as a `Trigger › Kill` submenu:
+Prefer `SUPER+SPACE → kill` over the bar button? The installed plugin
+already contains everything needed — no extra download:
 
 ```sh
-git clone https://github.com/hangovers/omakill.git
-cd omakill
-./install.sh
+~/.config/omarchy/plugins/io.github.hangovers.omakill/install.sh
 ```
 
 Idempotent: merges a marked block into
@@ -45,7 +43,7 @@ shows only the `Kill` parent; enter it for the three actions.
 omarchy plugin remove io.github.hangovers.omakill
 ```
 
-and, if you installed the Trigger menu:
+and, if you installed the Trigger menu (from the plugin directory):
 
 ```sh
 ./uninstall.sh

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.hangovers.omakill",
   "name": "Omakill",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "hangovers",
   "license": "MIT",
   "description": "Force-close frozen apps from the bar: click-to-kill, window and process pickers.",
