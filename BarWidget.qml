@@ -75,7 +75,7 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "󰭌"
+    text: "󰚌"
     tooltipText: "Omakill — force-close apps"
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.LeftButton) root.toggle()

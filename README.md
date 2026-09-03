@@ -10,6 +10,12 @@ an optional skull button for the bar. Three actions, no new daemons:
   (btop-style `/proc` sampling, top-200 by memory, TERM→KILL escalation,
   PID 1/self guards, confirm step)
 
+![SUPER+SPACE search](shots/search.png)
+![Kill submenu](shots/submenu.png)
+
+Showcase video (bar button included):
+[screenrecording-2026-09-03_22-06-08.mp4](https://github.com/Hangovers/omakill/releases/download/v1.0.2/screenrecording-2026-09-03_22-06-08.mp4)
+
 ## Install (Trigger menu)
 
 ```sh

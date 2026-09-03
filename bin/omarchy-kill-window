@@ -10,7 +10,7 @@ clients_json=$(hyprctl clients -j 2>/dev/null || echo "[]")
 count=$(printf "%s" "$clients_json" | jq 'length')
 
 if [[ "$count" -eq 0 ]]; then
-  omarchy-notification-send "Kill" "No open windows" -g 󰭌 2>/dev/null || notify-send "Kill" "No open windows"
+  omarchy-notification-send "Kill" "No open windows" -g 󰚌 2>/dev/null || notify-send "Kill" "No open windows"
   exit 0
 fi
 
@@ -54,4 +54,4 @@ if [[ -z "$addr" ]]; then
 fi
 
 hyprctl dispatch "hl.dsp.window.close({ window = \"address:$addr\" })" >/dev/null
-omarchy-notification-send "Kill" "Closed ${label:-window}" -g 󰭌 2>/dev/null || true
+omarchy-notification-send "Kill" "Closed ${label:-window}" -g 󰚌 2>/dev/null || true

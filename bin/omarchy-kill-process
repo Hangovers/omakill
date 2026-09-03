@@ -112,4 +112,4 @@ if kill -0 "$pid" 2>/dev/null; then
   exit 1
 fi
 
-omarchy-notification-send "Kill" "$comm ($pid) terminated" -g 󰭌 2>/dev/null || true
+omarchy-notification-send "Kill" "$comm ($pid) terminated" -g 󰚌 2>/dev/null || true
