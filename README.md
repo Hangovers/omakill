@@ -12,8 +12,9 @@ an optional skull button for the bar. Three actions, no new daemons:
 
 ![SUPER+SPACE search](shots/search.png)
 ![Kill submenu](shots/submenu.png)
+![Showcase](shots/showcase.gif)
 
-Showcase video (bar button included):
+Full-quality video:
 [screenrecording-2026-09-03_22-06-08.mp4](https://github.com/Hangovers/omakill/releases/download/v1.0.2/screenrecording-2026-09-03_22-06-08.mp4)
 
 ## Install (Trigger menu)
