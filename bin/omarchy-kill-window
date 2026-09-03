@@ -1,0 +1,57 @@
+#!/bin/bash
+
+# omarchy:summary=Pick a Hyprland window from a menu and close it
+# omarchy:group=kill
+# omarchy:name=window
+
+set -euo pipefail
+
+clients_json=$(hyprctl clients -j 2>/dev/null || echo "[]")
+count=$(printf "%s" "$clients_json" | jq 'length')
+
+if [[ "$count" -eq 0 ]]; then
+  omarchy-notification-send "Kill" "No open windows" -g 󰭌 2>/dev/null || notify-send "Kill" "No open windows"
+  exit 0
+fi
+
+mapfile -t rows < <(printf "%s" "$clients_json" | jq -r '.[] | [.address, .class, (.title // "" | gsub("[\t\n]"; " ") | .[0:80] | if . == "" then "(no title)" else . end), (.workspace.name // "?"), (.pid | tostring)] | @tsv')
+
+options=()
+addrs=()
+for row in "${rows[@]}"; do
+  IFS=$'\t' read -r addr class title ws pid <<<"$row"
+  label="$class: $title"
+  options+=("󰖲	$label	Workspace $ws · PID $pid")
+  addrs+=("$addr")
+done
+
+choice=$(printf "%s\n" "${options[@]}" | omarchy-menu-select "Kill window" -- --width 600) || exit 0
+
+if [[ -z "${choice:-}" ]]; then
+  exit 0
+fi
+
+# Resolve the exact window by position: the address never appears on screen.
+idx=-1
+for i in "${!options[@]}"; do
+  if [[ "${options[$i]#*$'\t'}" == "$choice" ]]; then
+    idx=$i
+    break
+  fi
+done
+
+if (( idx < 0 )); then
+  echo "Could not match selection to a window." >&2
+  omarchy-notification-send "Kill" "Could not match selection" -g 󰖲 2>/dev/null || true
+  exit 1
+fi
+
+addr=${addrs[$idx]}
+label=${choice%%$'\t'*}
+
+if [[ -z "$addr" ]]; then
+  exit 0
+fi
+
+hyprctl dispatch "hl.dsp.window.close({ window = \"address:$addr\" })" >/dev/null
+omarchy-notification-send "Kill" "Closed ${label:-window}" -g 󰭌 2>/dev/null || true
