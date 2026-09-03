@@ -1,6 +1,18 @@
 #!/bin/bash
 # Installs the omakill Trigger menu + commands. Idempotent — safe to re-run.
+# Usage: ./install.sh [--with-bar]
+#   --with-bar also enables the optional skull button in the bar.
 set -euo pipefail
+
+WITH_BAR=0
+if [[ "${1:-}" == "--with-bar" ]]; then
+  WITH_BAR=1
+elif [[ -n "${1:-}" ]]; then
+  echo "Usage: $0 [--with-bar]" >&2
+  exit 1
+fi
+
+PLUGIN_ID="io.github.hangovers.omakill"
 
 REPO_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 BIN_DST="$HOME/.local/bin"
@@ -67,3 +79,7 @@ EOF
 
 omarchy menu refresh >/dev/null 2>&1 || true
 echo "Done. Press SUPER+SPACE and search 'kill'."
+
+if (( WITH_BAR )); then
+  omarchy plugin enable "$PLUGIN_ID" --section right
+fi
