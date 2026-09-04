@@ -7,22 +7,28 @@
 set -euo pipefail
 
 # Harden helper lookup: ignore inherited PATH.
-export PATH="/usr/local/bin:/usr/bin:/bin"
+# NOTE: /usr/share/omarchy/bin holds omarchy helpers; kept explicitly so
+# resolution does not depend on a /usr/bin symlink surviving.
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/share/omarchy/bin"
 IFS=$'\n\t'
 
+# Drop any inherited shell functions so helper resolution cannot be hijacked
+# via env function injection (e.g. BASH_FUNC_ps%%). type -P below then forces
+# a PATH search, ignoring functions/builtins.
+unset -f ps awk timeout head tr cut xargs sleep date omarchy-menu-select omarchy-notification-send 2>/dev/null || true
+
 # Resolve required helpers to absolute paths; fail fast if missing.
-PS_BIN=$(command -v ps) || { echo "Missing required command: ps" >&2; exit 1; }
-AWK_BIN=$(command -v awk) || { echo "Missing required command: awk" >&2; exit 1; }
-TIMEOUT_BIN=$(command -v timeout) || { echo "Missing required command: timeout" >&2; exit 1; }
-HEAD_BIN=$(command -v head) || { echo "Missing required command: head" >&2; exit 1; }
-TR_BIN=$(command -v tr) || { echo "Missing required command: tr" >&2; exit 1; }
-SED_BIN=$(command -v sed) || { echo "Missing required command: sed" >&2; exit 1; }
-CUT_BIN=$(command -v cut) || { echo "Missing required command: cut" >&2; exit 1; }
-XARGS_BIN=$(command -v xargs) || { echo "Missing required command: xargs" >&2; exit 1; }
-SLEEP_BIN=$(command -v sleep) || { echo "Missing required command: sleep" >&2; exit 1; }
-DATE_BIN=$(command -v date) || { echo "Missing required command: date" >&2; exit 1; }
-MENU_BIN=$(command -v omarchy-menu-select) || { echo "Missing required command: omarchy-menu-select" >&2; exit 1; }
-NOTIFY_BIN=$(command -v omarchy-notification-send) || { echo "Missing required command: omarchy-notification-send" >&2; exit 1; }
+PS_BIN=$(type -P ps) || { echo "Missing required command: ps" >&2; exit 1; }
+AWK_BIN=$(type -P awk) || { echo "Missing required command: awk" >&2; exit 1; }
+TIMEOUT_BIN=$(type -P timeout) || { echo "Missing required command: timeout" >&2; exit 1; }
+HEAD_BIN=$(type -P head) || { echo "Missing required command: head" >&2; exit 1; }
+TR_BIN=$(type -P tr) || { echo "Missing required command: tr" >&2; exit 1; }
+CUT_BIN=$(type -P cut) || { echo "Missing required command: cut" >&2; exit 1; }
+XARGS_BIN=$(type -P xargs) || { echo "Missing required command: xargs" >&2; exit 1; }
+SLEEP_BIN=$(type -P sleep) || { echo "Missing required command: sleep" >&2; exit 1; }
+DATE_BIN=$(type -P date) || { echo "Missing required command: date" >&2; exit 1; }
+MENU_BIN=$(type -P omarchy-menu-select) || { echo "Missing required command: omarchy-menu-select" >&2; exit 1; }
+NOTIFY_BIN=$(type -P omarchy-notification-send) || { echo "Missing required command: omarchy-notification-send" >&2; exit 1; }
 
 notify() {
   "$NOTIFY_BIN" "$@" 2>/dev/null || true
@@ -61,6 +67,11 @@ get_comm() {
 }
 
 # Abort if pid was reused or restarted since selection.
+# NOTE: residual TOCTOU remains — a clone/exit+reuse landing on the same PID
+# in the microseconds between the final revalidate and kill(2) would still hit
+# the new process. The window is narrowed to ms by revalidating immediately
+# before TERM and again before KILL, which is the best pure bash can do without
+# pidfd_open; acceptable for interactive use given slow PID wrap.
 revalidate_pid() {
   local pid="$1" orig_start="$2" orig_comm="$3" cur_start cur_comm
   cur_start=$(get_starttime "$pid")
@@ -122,10 +133,12 @@ while IFS=' ' read -r k v; do [[ -n "${k:-}" ]] && cpu[$k]=$v; done < <(live_cpu
 
 # Parse all rows in one pass (no per-row forks): pid user mem comm args100.
 options=("󰑐	Refresh list	reload with current CPU/MEM")
+option_pids=("") # parallel to options; [0] is the Refresh placeholder
 while IFS=$'\t' read -r pid user mem comm args; do
   # Drop anything that vanished during the CPU sampling window.
   [[ -n "${pid:-}" && "$pid" =~ ^[0-9]+$ && -n "${cpu[$pid]:-}" ]] || continue
   options+=("󰋊	$comm ($pid) · ${cpu[$pid]}% CPU · $mem% MEM	$user · ${args:-$comm}")
+  option_pids+=("$pid")
 done < <(printf '%s\n' "${lines[@]}" | "$AWK_BIN" '{pid=$1; user=$2; mem=$3; comm=$4; line=$0; sub(/^ *[^ ]+ +[^ ]+ +[^ ]+ +[^ ]+ */,"",line); gsub(/\t/," ",line); if(line=="") line=comm; printf "%s\t%s\t%s\t%s\t%s\n", pid, user, mem, comm, substr(line,1,100)}')
 
 if ! choice=$(printf "%s\n" "${options[@]}" | "$TIMEOUT_BIN" 90 "$MENU_BIN" "Kill process — top by memory, $("$DATE_BIN" +%H:%M:%S)" -- --width 700); then
@@ -139,7 +152,23 @@ if [[ "$choice" == Refresh* ]]; then
   exec "$0"
 fi
 
-pid=$("$SED_BIN" -n 's/.*(\([0-9][0-9]*\)).*/\1/p' <<<"$choice" | "$HEAD_BIN" -n 1)
+# Resolve the exact process by menu position — never by re-parsing display text.
+# The subtext embeds attacker-controlled cmdline (args), so a greedy "(pid)"
+# parse could be hijacked with a crafted "(digits)" in args and misdirect the
+# kill even though revalidation would then check the wrong PID.
+idx=-1
+for i in "${!options[@]}"; do
+  if [[ "${options[$i]#*$'\t'}" == "$choice" ]]; then
+    idx=$i
+    break
+  fi
+done
+if (( idx <= 0 )); then
+  echo "Could not match selection to a process." >&2
+  notify "Kill" "Could not read selection" -g 󰋊
+  exit 1
+fi
+pid=${option_pids[$idx]}
 
 if [[ -z "${pid:-}" || ! "$pid" =~ ^[0-9]+$ ]]; then
   echo "Could not parse PID from selection." >&2

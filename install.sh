@@ -5,8 +5,14 @@
 set -euo pipefail
 
 # Harden helper lookup: ignore inherited PATH.
-export PATH="/usr/local/bin:/usr/bin:/bin"
+# NOTE: /usr/share/omarchy/bin holds omarchy helpers; kept explicitly so
+# resolution does not depend on a /usr/bin symlink surviving.
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/share/omarchy/bin"
 IFS=$'\n\t'
+
+# Drop inherited functions so type -P below cannot be shadowed via env
+# function injection (e.g. BASH_FUNC_hyprctl%%).
+unset -f hyprctl jq omarchy python3 2>/dev/null || true
 
 WITH_BAR=0
 if [[ "${1:-}" == "--with-bar" ]]; then
@@ -26,13 +32,16 @@ MARK_END='// <<< omakill'
 
 missing=()
 for cmd in hyprctl jq; do
-  command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+  type -P "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
 done
 if (( ${#missing[@]} > 0 )); then
-  echo "Missing dependencies: ${missing[*]}" >&2
+  (IFS=' '; echo "Missing dependencies: ${missing[*]}" >&2)
   echo "Install them first, then re-run." >&2
   exit 1
 fi
+
+PYTHON3_BIN=$(type -P python3) || { echo "Missing required command: python3" >&2; exit 1; }
+OMARCHY_BIN=$(type -P omarchy || true)
 
 mkdir -p "$BIN_DST"
 for bin in omarchy-kill-window omarchy-kill-process; do
@@ -52,7 +61,7 @@ if [[ ! -f "$MENU_FILE" ]]; then
 fi
 cp "$MENU_FILE" "$MENU_FILE.bak.$(date +%s)"
 
-python3 - "$MENU_FILE" "$REPO_DIR/menu/kill.jsonc" "$MARK_BEGIN" "$MARK_END" <<'EOF'
+"$PYTHON3_BIN" - "$MENU_FILE" "$REPO_DIR/menu/kill.jsonc" "$MARK_BEGIN" "$MARK_END" <<'EOF'
 import re, sys
 menu_path, snippet_path, mark_begin, mark_end = sys.argv[1:5]
 text = open(menu_path).read()
@@ -73,7 +82,7 @@ open(menu_path, "w").write(text)
 EOF
 
 # A backup was made above; validate JSON (comments stripped) before finishing.
-python3 - "$MENU_FILE" <<'EOF'
+"$PYTHON3_BIN" - "$MENU_FILE" <<'EOF'
 import json, re, sys
 text = open(sys.argv[1]).read()
 text = re.sub(r"//.*", "", text)
@@ -81,9 +90,15 @@ json.loads(text)
 print("Menu file valid.")
 EOF
 
-omarchy menu refresh >/dev/null 2>&1 || true
+if [[ -n "${OMARCHY_BIN:-}" ]]; then
+  "$OMARCHY_BIN" menu refresh >/dev/null 2>&1 || true
+fi
 echo "Done. Press SUPER+SPACE and search 'kill'."
 
 if (( WITH_BAR )); then
-  omarchy plugin enable "$PLUGIN_ID" --section right
+  if [[ -z "${OMARCHY_BIN:-}" ]]; then
+    echo "Missing required command: omarchy" >&2
+    exit 1
+  fi
+  "$OMARCHY_BIN" plugin enable "$PLUGIN_ID" --section right
 fi

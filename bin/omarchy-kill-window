@@ -7,16 +7,24 @@
 set -euo pipefail
 
 # Harden helper lookup: ignore inherited PATH.
-export PATH="/usr/local/bin:/usr/bin:/bin"
+# NOTE: /usr/share/omarchy/bin holds omarchy helpers; kept explicitly so
+# resolution does not depend on a /usr/bin symlink surviving.
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/share/omarchy/bin"
 IFS=$'\n\t'
 
+# Drop any inherited shell functions so helper resolution cannot be hijacked
+# via env function injection (e.g. BASH_FUNC_hyprctl%%). type -P below then
+# forces a PATH search, ignoring functions/builtins.
+unset -f hyprctl jq timeout head omarchy-menu-select omarchy-notification-send notify-send 2>/dev/null || true
+
 # Resolve required helpers to absolute paths; fail fast if missing.
-HYPRCTL_BIN=$(command -v hyprctl) || { echo "Missing required command: hyprctl" >&2; exit 1; }
-JQ_BIN=$(command -v jq) || { echo "Missing required command: jq" >&2; exit 1; }
-TIMEOUT_BIN=$(command -v timeout) || { echo "Missing required command: timeout" >&2; exit 1; }
-HEAD_BIN=$(command -v head) || { echo "Missing required command: head" >&2; exit 1; }
-MENU_BIN=$(command -v omarchy-menu-select) || { echo "Missing required command: omarchy-menu-select" >&2; exit 1; }
-NOTIFY_BIN=$(command -v omarchy-notification-send) || { echo "Missing required command: omarchy-notification-send" >&2; exit 1; }
+HYPRCTL_BIN=$(type -P hyprctl) || { echo "Missing required command: hyprctl" >&2; exit 1; }
+JQ_BIN=$(type -P jq) || { echo "Missing required command: jq" >&2; exit 1; }
+TIMEOUT_BIN=$(type -P timeout) || { echo "Missing required command: timeout" >&2; exit 1; }
+HEAD_BIN=$(type -P head) || { echo "Missing required command: head" >&2; exit 1; }
+MENU_BIN=$(type -P omarchy-menu-select) || { echo "Missing required command: omarchy-menu-select" >&2; exit 1; }
+NOTIFY_BIN=$(type -P omarchy-notification-send) || { echo "Missing required command: omarchy-notification-send" >&2; exit 1; }
+NOTIFY_SEND_BIN=$(type -P notify-send || true)
 
 notify() {
   "$NOTIFY_BIN" "$@" 2>/dev/null || true
@@ -35,8 +43,8 @@ fi
 
 if [[ "$count" -eq 0 ]]; then
   notify "Kill" "No open windows" -g 󰚌 || true
-  if command -v notify-send >/dev/null 2>&1; then
-    notify-send "Kill" "No open windows" 2>/dev/null || true
+  if [[ -n "${NOTIFY_SEND_BIN:-}" ]]; then
+    "$NOTIFY_SEND_BIN" "Kill" "No open windows" 2>/dev/null || true
   fi
   exit 0
 fi
