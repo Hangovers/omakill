@@ -15,7 +15,7 @@ IFS=$'\n\t'
 # Drop any inherited shell functions so helper resolution cannot be hijacked
 # via env function injection (e.g. BASH_FUNC_ps%%). type -P below then forces
 # a PATH search, ignoring functions/builtins.
-unset -f ps awk timeout head tr cut xargs sleep date omarchy-menu-select omarchy-notification-send 2>/dev/null || true
+unset -f ps awk timeout head tr cut xargs sleep date python3 omarchy-menu-select omarchy-notification-send 2>/dev/null || true
 
 # Resolve required helpers to absolute paths; fail fast if missing.
 PS_BIN=$(type -P ps) || { echo "Missing required command: ps" >&2; exit 1; }
@@ -29,6 +29,9 @@ SLEEP_BIN=$(type -P sleep) || { echo "Missing required command: sleep" >&2; exit
 DATE_BIN=$(type -P date) || { echo "Missing required command: date" >&2; exit 1; }
 MENU_BIN=$(type -P omarchy-menu-select) || { echo "Missing required command: omarchy-menu-select" >&2; exit 1; }
 NOTIFY_BIN=$(type -P omarchy-notification-send) || { echo "Missing required command: omarchy-notification-send" >&2; exit 1; }
+# Optional: race-free signalling via pidfd (Linux 5.3+, python3.9+).
+# Absence falls back to PID-based kill below; never fatal here.
+PYTHON3_BIN=$(type -P python3 || true)
 
 notify() {
   "$NOTIFY_BIN" "$@" 2>/dev/null || true
@@ -67,11 +70,11 @@ get_comm() {
 }
 
 # Abort if pid was reused or restarted since selection.
-# NOTE: residual TOCTOU remains — a clone/exit+reuse landing on the same PID
-# in the microseconds between the final revalidate and kill(2) would still hit
-# the new process. The window is narrowed to ms by revalidating immediately
-# before TERM and again before KILL, which is the best pure bash can do without
-# pidfd_open; acceptable for interactive use given slow PID wrap.
+# NOTE: the primary kill path below uses pidfd (pins the process object, not
+# the PID number), so the revalidate->signal window is fully closed there.
+# This helper remains for early exits (already-gone/reused messages) and for
+# the legacy PID-based fallback when python3/pidfd is unavailable — only the
+# fallback retains a narrowed ms-scale residual window.
 revalidate_pid() {
   local pid="$1" orig_start="$2" orig_comm="$3" cur_start cur_comm
   cur_start=$(get_starttime "$pid")
@@ -218,8 +221,135 @@ if ! confirm=$(printf "Kill %s (%s)\nCancel" "$comm" "$pid" | "$TIMEOUT_BIN" 90 
 fi
 [[ "$confirm" == Kill* ]] || exit 0
 
+# Race-free termination via pidfd (Linux 5.3+, python3.9+).
+# Opens a pidfd for $pid, re-checks starttime/comm identity against the
+# expected values, then TERM/wait/KILL entirely via the fd. The fd pins the
+# process object, so exit+reuse of the PID number mid-kill can never redirect
+# the signal to a new process.
+# Exit codes: 0 terminated/gone, 10 reused (never signalled),
+# 11 permission denied, 12 still alive, 2 fallback (no python3/pidfd/ENOSYS).
+kill_via_pidfd() {
+  local pid="$1" exp_start="$2" exp_comm="${3:-}"
+  [[ -n "${PYTHON3_BIN:-}" ]] || return 2
+  [[ "$pid" =~ ^[0-9]+$ && -n "$exp_start" ]] || return 10
+  "$TIMEOUT_BIN" 10 "$PYTHON3_BIN" - "$pid" "$exp_start" "$exp_comm" <<'PYEOF'
+import os, signal, sys, time
+try:
+    pid = int(sys.argv[1])
+except ValueError:
+    sys.exit(10)
+exp_start, exp_comm = sys.argv[2], sys.argv[3]
+
+def read_start():
+    try:
+        with open("/proc/%d/stat" % pid) as f:
+            data = f.read()
+    except OSError:
+        return None
+    idx = data.rfind(") ")
+    rest = data[idx + 2:] if idx != -1 else data
+    parts = rest.split(" ")
+    parts = [p for p in parts if p]
+    return parts[19] if len(parts) >= 20 else None
+
+def read_comm():
+    try:
+        with open("/proc/%d/comm" % pid) as f:
+            return f.read().strip()[:256]
+    except OSError:
+        return ""
+
+try:
+    pidfd = os.pidfd_open(pid, 0)
+except ProcessLookupError:
+    sys.exit(0)  # already gone
+except (AttributeError, OSError):
+    sys.exit(2)  # no pidfd support -> legacy fallback
+
+cur = read_start()
+if cur is None:
+    sys.exit(0)  # gone between open and read
+if cur != exp_start:
+    sys.exit(10)  # reused/restarted -> never signal
+if exp_comm:
+    cc = read_comm()
+    if cc and cc != exp_comm:
+        sys.exit(10)
+
+try:
+    signal.pidfd_send_signal(pidfd, signal.SIGTERM)
+except ProcessLookupError:
+    sys.exit(0)
+except PermissionError:
+    pass  # surface as 11 at KILL stage if still alive
+except OSError:
+    sys.exit(2)
+
+alive = True
+for _ in range(10):
+    try:
+        signal.pidfd_send_signal(pidfd, 0)
+    except ProcessLookupError:
+        alive = False
+        break
+    except PermissionError:
+        break  # assume alive; KILL below will report EPERM
+    except OSError:
+        sys.exit(2)
+    time.sleep(0.2)
+if not alive:
+    sys.exit(0)
+
+try:
+    signal.pidfd_send_signal(pidfd, signal.SIGKILL)
+except ProcessLookupError:
+    sys.exit(0)
+except PermissionError:
+    sys.exit(11)
+except OSError:
+    sys.exit(2)
+time.sleep(0.3)
+try:
+    signal.pidfd_send_signal(pidfd, 0)
+    sys.exit(12)
+except ProcessLookupError:
+    sys.exit(0)
+except PermissionError:
+    sys.exit(12)
+except OSError:
+    sys.exit(2)
+PYEOF
+}
+
 # Revalidate right before TERM: confirm menu leaves a reuse window.
 revalidate_pid "$pid" "$orig_start" "$orig_comm"
+
+pidfd_rc=0
+if kill_via_pidfd "$pid" "$orig_start" "${orig_comm:-}"; then
+  pidfd_rc=0
+else
+  pidfd_rc=$?
+fi
+if [[ "$pidfd_rc" -eq 0 ]]; then
+  notify "Kill" "$comm ($pid) terminated" -g 󰚌
+  exit 0
+elif [[ "$pidfd_rc" -eq 10 ]]; then
+  notify "Kill" "Process $pid reused or restarted — aborting" -g 󰋊
+  echo "Process $pid reused or restarted — aborting." >&2
+  exit 1
+elif [[ "$pidfd_rc" -eq 11 ]]; then
+  notify "Kill" "Permission denied for $pid (another user's process?)" -g 󰋊
+  echo "Permission denied for $pid (another user's process?)." >&2
+  exit 1
+elif [[ "$pidfd_rc" -eq 12 ]]; then
+  echo "Process $pid is still alive." >&2
+  exit 1
+elif [[ "$pidfd_rc" -ne 2 ]]; then
+  echo "Process $pid could not be terminated (helper error $pidfd_rc)." >&2
+  exit 1
+fi
+# pidfd unavailable (rc=2): legacy PID-based fallback below. Window narrowed
+# to ms by revalidating immediately before TERM and again before KILL.
 
 if kill -TERM "$pid" 2>/dev/null; then
   for _ in 1 2 3 4 5 6 7 8 9 10; do
