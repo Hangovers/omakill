@@ -6,15 +6,47 @@
 
 set -euo pipefail
 
-clients_json=$(hyprctl clients -j 2>/dev/null || echo "[]")
-count=$(printf "%s" "$clients_json" | jq 'length')
+# Harden helper lookup: ignore inherited PATH.
+export PATH="/usr/local/bin:/usr/bin:/bin"
+IFS=$'\n\t'
+
+# Resolve required helpers to absolute paths; fail fast if missing.
+HYPRCTL_BIN=$(command -v hyprctl) || { echo "Missing required command: hyprctl" >&2; exit 1; }
+JQ_BIN=$(command -v jq) || { echo "Missing required command: jq" >&2; exit 1; }
+TIMEOUT_BIN=$(command -v timeout) || { echo "Missing required command: timeout" >&2; exit 1; }
+HEAD_BIN=$(command -v head) || { echo "Missing required command: head" >&2; exit 1; }
+MENU_BIN=$(command -v omarchy-menu-select) || { echo "Missing required command: omarchy-menu-select" >&2; exit 1; }
+NOTIFY_BIN=$(command -v omarchy-notification-send) || { echo "Missing required command: omarchy-notification-send" >&2; exit 1; }
+
+notify() {
+  "$NOTIFY_BIN" "$@" 2>/dev/null || true
+}
+
+# Bounded: deadline via timeout, producer-side 2MiB cap on hyprctl output.
+clients_json=$("$TIMEOUT_BIN" 5 "$HYPRCTL_BIN" clients -j 2>/dev/null | "$HEAD_BIN" -c 2097152 || echo "[]")
+if [[ -z "$clients_json" ]]; then
+  clients_json="[]"
+fi
+count=$(printf "%s" "$clients_json" | "$TIMEOUT_BIN" 5 "$JQ_BIN" 'length' 2>/dev/null | "$HEAD_BIN" -c 64 || echo 0)
+
+if [[ -z "${count:-}" || ! "$count" =~ ^[0-9]+$ ]]; then
+  count=0
+fi
 
 if [[ "$count" -eq 0 ]]; then
-  omarchy-notification-send "Kill" "No open windows" -g 󰚌 2>/dev/null || notify-send "Kill" "No open windows"
+  notify "Kill" "No open windows" -g 󰚌 || true
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send "Kill" "No open windows" 2>/dev/null || true
+  fi
   exit 0
 fi
 
-mapfile -t rows < <(printf "%s" "$clients_json" | jq -r '.[] | [.address, .class, (.title // "" | gsub("[\t\n]"; " ") | .[0:80] | if . == "" then "(no title)" else . end), (.workspace.name // "?"), (.pid | tostring)] | @tsv')
+mapfile -t rows < <(printf "%s" "$clients_json" | "$TIMEOUT_BIN" 5 "$JQ_BIN" -r '.[] | [.address, .class, (.title // "" | gsub("[\t\n]"; " ") | .[0:80] | if . == "" then "(no title)" else . end), (.workspace.name // "?"), (.pid | tostring)] | @tsv' 2>/dev/null | "$HEAD_BIN" -c 1048576)
+
+if [[ ${#rows[@]} -eq 0 ]]; then
+  notify "Kill" "No open windows" -g 󰚌
+  exit 0
+fi
 
 options=()
 addrs=()
@@ -25,7 +57,10 @@ for row in "${rows[@]}"; do
   addrs+=("$addr")
 done
 
-choice=$(printf "%s\n" "${options[@]}" | omarchy-menu-select "Kill window" -- --width 600) || exit 0
+if ! choice=$(printf "%s\n" "${options[@]}" | "$TIMEOUT_BIN" 90 "$MENU_BIN" "Kill window" -- --width 600); then
+  # Menu cancelled or timed out (124) — treat as cancel.
+  exit 0
+fi
 
 if [[ -z "${choice:-}" ]]; then
   exit 0
@@ -42,7 +77,7 @@ done
 
 if (( idx < 0 )); then
   echo "Could not match selection to a window." >&2
-  omarchy-notification-send "Kill" "Could not match selection" -g 󰖲 2>/dev/null || true
+  notify "Kill" "Could not match selection" -g 󰖲
   exit 1
 fi
 
@@ -53,5 +88,16 @@ if [[ -z "$addr" ]]; then
   exit 0
 fi
 
-hyprctl dispatch "hl.dsp.window.close({ window = \"address:$addr\" })" >/dev/null
-omarchy-notification-send "Kill" "Closed ${label:-window}" -g 󰚌 2>/dev/null || true
+# Validate window address to avoid passing unexpected data to hyprctl.
+if [[ ! "$addr" =~ ^0x[0-9a-fA-F]+$ ]]; then
+  echo "Invalid window address." >&2
+  notify "Kill" "Could not match selection" -g 󰖲
+  exit 1
+fi
+
+"$TIMEOUT_BIN" 10 "$HYPRCTL_BIN" dispatch "hl.dsp.window.close({ window = \"address:$addr\" })" >/dev/null 2>&1 || {
+  echo "Failed to close window $addr." >&2
+  notify "Kill" "Failed to close window" -g 󰖲
+  exit 1
+}
+notify "Kill" "Closed ${label:-window}" -g 󰚌

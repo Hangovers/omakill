@@ -2,6 +2,10 @@
 # Removes everything install.sh added. Restores pre-install backups if present.
 set -euo pipefail
 
+# Harden helper lookup: ignore inherited PATH.
+export PATH="/usr/local/bin:/usr/bin:/bin"
+IFS=$'\n\t'
+
 REPO_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 BIN_DST="$HOME/.local/bin"
 MENU_FILE="$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"

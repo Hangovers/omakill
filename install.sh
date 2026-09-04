@@ -4,6 +4,10 @@
 #   --with-bar also enables the optional skull button in the bar.
 set -euo pipefail
 
+# Harden helper lookup: ignore inherited PATH.
+export PATH="/usr/local/bin:/usr/bin:/bin"
+IFS=$'\n\t'
+
 WITH_BAR=0
 if [[ "${1:-}" == "--with-bar" ]]; then
   WITH_BAR=1
