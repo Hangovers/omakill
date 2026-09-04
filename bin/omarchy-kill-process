@@ -26,7 +26,7 @@ require SLEEP_BIN sleep
 require DATE_BIN date
 require MENU_BIN omarchy-menu-select
 require NOTIFY_BIN omarchy-notification-send
-# Optional: pidfd signalling (Linux 5.3+, python3.9+); absence uses PID fallback.
+# pidfd signalling (Linux 5.3+, Python 3.9+); unavailable support fails closed.
 PYTHON3_BIN=$(type -P python3 || true)
 
 notify() {
@@ -59,9 +59,9 @@ get_comm() {
 }
 
 # Abort if pid was reused or restarted since selection.
-# NOTE: the primary kill path uses pidfd (pins the process object), so the
+# NOTE: termination itself is pidfd-only (pins the process object), so the
 # revalidate->signal window is fully closed there. This helper remains for
-# early exits and the legacy PID fallback (which keeps a narrowed ms window).
+# early exits before signalling; without pidfd the script fails closed.
 reused() { local pid=$1 detail=$2; notify "Kill" "Process $pid reused or restarted — aborting" -g 󰋊; echo "Process $pid reused or restarted ($detail) — aborting." >&2; exit 1; }
 revalidate_pid() {
   local pid="$1" orig_start="$2" orig_comm="$3" cur_start cur_comm
@@ -208,7 +208,7 @@ fi
 # process object, so exit+reuse of the PID number mid-kill can never redirect
 # the signal to a new process.
 # Exit codes: 0 terminated/gone, 10 reused (never signalled),
-# 11 permission denied, 12 still alive, 2 fallback (no python3/pidfd/ENOSYS).
+# 11 permission denied, 12 still alive, 2 pidfd unavailable -> fail closed.
 kill_via_pidfd() {
   local pid="$1" exp_start="$2" exp_comm="${3:-}"
   [[ -n "${PYTHON3_BIN:-}" ]] || return 2
@@ -244,7 +244,7 @@ try:
 except ProcessLookupError:
     sys.exit(0)  # already gone
 except (AttributeError, OSError):
-    sys.exit(2)  # no pidfd support -> legacy fallback
+    sys.exit(2)  # no pidfd support -> caller fails closed, never numeric-PID kill
 
 cur = read_start()
 if cur is None:
@@ -265,7 +265,6 @@ except PermissionError:
 except OSError:
     sys.exit(2)
 
-alive = True
 for _ in range(10):
     try:
         signal.pidfd_send_signal(pidfd, 0)
@@ -310,36 +309,7 @@ case "$pidfd_rc" in
   11) notify "Kill" "Permission denied for $pid (another user's process?)" -g 󰋊
       echo "Permission denied for $pid (another user's process?)." >&2; exit 1 ;;
   12) echo "Process $pid is still alive." >&2; exit 1 ;;
-  2) ;; # pidfd unavailable: legacy PID fallback below (ms-scale window)
+  2) notify "Kill" "Safe termination unavailable (pidfd unsupported)" -g 󰋊
+     echo "Process $pid not signalled: pidfd unavailable, refusing numeric-PID kill." >&2; exit 1 ;;
   *) echo "Process $pid could not be terminated (helper error $pidfd_rc)." >&2; exit 1 ;;
 esac
-
-# Fresh revalidation: the pidfd attempt above (python startup on ENOSYS boxes)
-# leaves a reuse window after the pre-TERM check, so re-check before signalling.
-revalidate_pid "$pid" "$orig_start" "$orig_comm"
-
-if kill -TERM "$pid" 2>/dev/null; then
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    kill -0 "$pid" 2>/dev/null || break
-    "$SLEEP_BIN" 0.2
-  done
-fi
-
-if kill -0 "$pid" 2>/dev/null; then
-  # Revalidate before escalating to KILL so a reused PID is never force-killed.
-  revalidate_pid "$pid" "$orig_start" "$orig_comm"
-  notify "Kill" "$comm ($pid) not responding, using KILL" -g 󰋊
-  if ! kill -KILL "$pid" 2>/dev/null; then
-    notify "Kill" "Permission denied for $pid (another user's process?)" -g 󰋊
-    echo "Permission denied for $pid (another user's process?)." >&2
-    exit 1
-  fi
-  "$SLEEP_BIN" 0.3
-fi
-
-if kill -0 "$pid" 2>/dev/null; then
-  echo "Process $pid is still alive." >&2
-  exit 1
-fi
-
-notify "Kill" "$comm ($pid) terminated" -g 󰚌
