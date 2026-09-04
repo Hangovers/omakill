@@ -6,60 +6,49 @@
 
 set -euo pipefail
 
-# Harden helper lookup: ignore inherited PATH.
-# NOTE: /usr/share/omarchy/bin holds omarchy helpers; kept explicitly so
-# resolution does not depend on a /usr/bin symlink surviving.
+# Hardened PATH (omarchy helpers live in /usr/share/omarchy/bin; no symlink reliance).
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/share/omarchy/bin"
 IFS=$'\n\t'
 
-# Drop any inherited shell functions so helper resolution cannot be hijacked
-# via env function injection (e.g. BASH_FUNC_ps%%). type -P below then forces
-# a PATH search, ignoring functions/builtins.
+# Clear inherited functions (env injection) so type -P resolves real binaries.
 unset -f ps awk timeout head tr cut xargs sleep date python3 omarchy-menu-select omarchy-notification-send 2>/dev/null || true
 
-# Resolve required helpers to absolute paths; fail fast if missing.
-PS_BIN=$(type -P ps) || { echo "Missing required command: ps" >&2; exit 1; }
-AWK_BIN=$(type -P awk) || { echo "Missing required command: awk" >&2; exit 1; }
-TIMEOUT_BIN=$(type -P timeout) || { echo "Missing required command: timeout" >&2; exit 1; }
-HEAD_BIN=$(type -P head) || { echo "Missing required command: head" >&2; exit 1; }
-TR_BIN=$(type -P tr) || { echo "Missing required command: tr" >&2; exit 1; }
-CUT_BIN=$(type -P cut) || { echo "Missing required command: cut" >&2; exit 1; }
-XARGS_BIN=$(type -P xargs) || { echo "Missing required command: xargs" >&2; exit 1; }
-SLEEP_BIN=$(type -P sleep) || { echo "Missing required command: sleep" >&2; exit 1; }
-DATE_BIN=$(type -P date) || { echo "Missing required command: date" >&2; exit 1; }
-MENU_BIN=$(type -P omarchy-menu-select) || { echo "Missing required command: omarchy-menu-select" >&2; exit 1; }
-NOTIFY_BIN=$(type -P omarchy-notification-send) || { echo "Missing required command: omarchy-notification-send" >&2; exit 1; }
-# Optional: race-free signalling via pidfd (Linux 5.3+, python3.9+).
-# Absence falls back to PID-based kill below; never fatal here.
+# Absolute helper paths, fail fast.
+require() { local var=$1 cmd=$2 p; p=$(type -P "$cmd") || { echo "Missing required command: $cmd" >&2; exit 1; }; printf -v "$var" '%s' "$p"; }
+require PS_BIN ps
+require AWK_BIN awk
+require TIMEOUT_BIN timeout
+require HEAD_BIN head
+require TR_BIN tr
+require CUT_BIN cut
+require XARGS_BIN xargs
+require SLEEP_BIN sleep
+require DATE_BIN date
+require MENU_BIN omarchy-menu-select
+require NOTIFY_BIN omarchy-notification-send
+# Optional: pidfd signalling (Linux 5.3+, python3.9+); absence uses PID fallback.
 PYTHON3_BIN=$(type -P python3 || true)
 
 notify() {
   "$NOTIFY_BIN" "$@" 2>/dev/null || true
 }
 
+valid_pid() { [[ "${1:-}" =~ ^[0-9]+$ ]]; }
+
 # Stable identity: starttime since boot (field 22 of /proc/<pid>/stat).
 # Handles comm containing parentheses/spaces by stripping "pid (comm) " first,
 # then starttime is field 20 of the remainder. Missing file -> empty.
 get_starttime() {
   local pid="$1" st
-  if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
-    printf ''
-    return 0
-  fi
-  if [[ ! -r "/proc/$pid/stat" ]]; then
-    printf ''
-    return 0
-  fi
+  valid_pid "$pid" || { printf ''; return 0; }
+  [[ -r "/proc/$pid/stat" ]] || { printf ''; return 0; }
   st=$("$AWK_BIN" '{sub(/^[0-9]+ \(.*\) /,""); n=split($0,s," "); if(n>=20) print s[20]}' "/proc/$pid/stat" 2>/dev/null | "$HEAD_BIN" -c 64 || true)
   printf '%s' "$st" | "$TR_BIN" -d ' \t\n' || true
 }
 
 get_comm() {
   local pid="$1" c
-  if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
-    printf ''
-    return 0
-  fi
+  valid_pid "$pid" || { printf ''; return 0; }
   if c=$( "$HEAD_BIN" -c 256 "/proc/$pid/comm" 2>/dev/null | "$TR_BIN" -d '\n' 2>/dev/null); then
     if [[ -n "$c" ]]; then
       printf '%s' "$c"
@@ -70,11 +59,10 @@ get_comm() {
 }
 
 # Abort if pid was reused or restarted since selection.
-# NOTE: the primary kill path below uses pidfd (pins the process object, not
-# the PID number), so the revalidate->signal window is fully closed there.
-# This helper remains for early exits (already-gone/reused messages) and for
-# the legacy PID-based fallback when python3/pidfd is unavailable — only the
-# fallback retains a narrowed ms-scale residual window.
+# NOTE: the primary kill path uses pidfd (pins the process object), so the
+# revalidate->signal window is fully closed there. This helper remains for
+# early exits and the legacy PID fallback (which keeps a narrowed ms window).
+reused() { local pid=$1 detail=$2; notify "Kill" "Process $pid reused or restarted — aborting" -g 󰋊; echo "Process $pid reused or restarted ($detail) — aborting." >&2; exit 1; }
 revalidate_pid() {
   local pid="$1" orig_start="$2" orig_comm="$3" cur_start cur_comm
   cur_start=$(get_starttime "$pid")
@@ -82,18 +70,10 @@ revalidate_pid() {
     notify "Kill" "Process $pid is already gone" -g 󰋊
     exit 0
   fi
-  if [[ "$cur_start" != "$orig_start" ]]; then
-    notify "Kill" "Process $pid reused or restarted — aborting" -g 󰋊
-    echo "Process $pid reused or restarted (starttime changed) — aborting." >&2
-    exit 1
-  fi
+  [[ "$cur_start" == "$orig_start" ]] || reused "$pid" "starttime changed"
   if [[ -n "${orig_comm:-}" ]]; then
     cur_comm=$(get_comm "$pid")
-    if [[ -n "$cur_comm" && "$cur_comm" != "$orig_comm" ]]; then
-      notify "Kill" "Process $pid reused or restarted — aborting" -g 󰋊
-      echo "Process $pid reused or restarted (comm changed) — aborting." >&2
-      exit 1
-    fi
+    [[ -z "$cur_comm" || "$cur_comm" == "$orig_comm" ]] || reused "$pid" "comm changed"
   fi
 }
 
@@ -231,7 +211,7 @@ fi
 kill_via_pidfd() {
   local pid="$1" exp_start="$2" exp_comm="${3:-}"
   [[ -n "${PYTHON3_BIN:-}" ]] || return 2
-  [[ "$pid" =~ ^[0-9]+$ && -n "$exp_start" ]] || return 10
+  valid_pid "$pid" && [[ -n "$exp_start" ]] || return 10
   "$TIMEOUT_BIN" 10 "$PYTHON3_BIN" - "$pid" "$exp_start" "$exp_comm" <<'PYEOF'
 import os, signal, sys, time
 try:
@@ -248,8 +228,7 @@ def read_start():
         return None
     idx = data.rfind(") ")
     rest = data[idx + 2:] if idx != -1 else data
-    parts = rest.split(" ")
-    parts = [p for p in parts if p]
+    parts = rest.split()
     return parts[19] if len(parts) >= 20 else None
 
 def read_comm():
@@ -290,15 +269,12 @@ for _ in range(10):
     try:
         signal.pidfd_send_signal(pidfd, 0)
     except ProcessLookupError:
-        alive = False
-        break
+        sys.exit(0)
     except PermissionError:
         break  # assume alive; KILL below will report EPERM
     except OSError:
         sys.exit(2)
     time.sleep(0.2)
-if not alive:
-    sys.exit(0)
 
 try:
     signal.pidfd_send_signal(pidfd, signal.SIGKILL)
@@ -325,31 +301,17 @@ PYEOF
 revalidate_pid "$pid" "$orig_start" "$orig_comm"
 
 pidfd_rc=0
-if kill_via_pidfd "$pid" "$orig_start" "${orig_comm:-}"; then
-  pidfd_rc=0
-else
-  pidfd_rc=$?
-fi
-if [[ "$pidfd_rc" -eq 0 ]]; then
-  notify "Kill" "$comm ($pid) terminated" -g 󰚌
-  exit 0
-elif [[ "$pidfd_rc" -eq 10 ]]; then
-  notify "Kill" "Process $pid reused or restarted — aborting" -g 󰋊
-  echo "Process $pid reused or restarted — aborting." >&2
-  exit 1
-elif [[ "$pidfd_rc" -eq 11 ]]; then
-  notify "Kill" "Permission denied for $pid (another user's process?)" -g 󰋊
-  echo "Permission denied for $pid (another user's process?)." >&2
-  exit 1
-elif [[ "$pidfd_rc" -eq 12 ]]; then
-  echo "Process $pid is still alive." >&2
-  exit 1
-elif [[ "$pidfd_rc" -ne 2 ]]; then
-  echo "Process $pid could not be terminated (helper error $pidfd_rc)." >&2
-  exit 1
-fi
-# pidfd unavailable (rc=2): legacy PID-based fallback below. Window narrowed
-# to ms by revalidating immediately before TERM and again before KILL.
+kill_via_pidfd "$pid" "$orig_start" "${orig_comm:-}" || pidfd_rc=$?
+case "$pidfd_rc" in
+  0) notify "Kill" "$comm ($pid) terminated" -g 󰚌; exit 0 ;;
+  10) notify "Kill" "Process $pid reused or restarted — aborting" -g 󰋊
+      echo "Process $pid reused or restarted — aborting." >&2; exit 1 ;;
+  11) notify "Kill" "Permission denied for $pid (another user's process?)" -g 󰋊
+      echo "Permission denied for $pid (another user's process?)." >&2; exit 1 ;;
+  12) echo "Process $pid is still alive." >&2; exit 1 ;;
+  2) ;; # pidfd unavailable: legacy PID fallback below (ms-scale window)
+  *) echo "Process $pid could not be terminated (helper error $pidfd_rc)." >&2; exit 1 ;;
+esac
 
 if kill -TERM "$pid" 2>/dev/null; then
   for _ in 1 2 3 4 5 6 7 8 9 10; do

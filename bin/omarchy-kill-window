@@ -6,24 +6,21 @@
 
 set -euo pipefail
 
-# Harden helper lookup: ignore inherited PATH.
-# NOTE: /usr/share/omarchy/bin holds omarchy helpers; kept explicitly so
-# resolution does not depend on a /usr/bin symlink surviving.
+# Hardened PATH (omarchy helpers live in /usr/share/omarchy/bin; no symlink reliance).
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/share/omarchy/bin"
 IFS=$'\n\t'
 
-# Drop any inherited shell functions so helper resolution cannot be hijacked
-# via env function injection (e.g. BASH_FUNC_hyprctl%%). type -P below then
-# forces a PATH search, ignoring functions/builtins.
+# Clear inherited functions (env injection) so type -P resolves real binaries.
 unset -f hyprctl jq timeout head omarchy-menu-select omarchy-notification-send notify-send 2>/dev/null || true
 
-# Resolve required helpers to absolute paths; fail fast if missing.
-HYPRCTL_BIN=$(type -P hyprctl) || { echo "Missing required command: hyprctl" >&2; exit 1; }
-JQ_BIN=$(type -P jq) || { echo "Missing required command: jq" >&2; exit 1; }
-TIMEOUT_BIN=$(type -P timeout) || { echo "Missing required command: timeout" >&2; exit 1; }
-HEAD_BIN=$(type -P head) || { echo "Missing required command: head" >&2; exit 1; }
-MENU_BIN=$(type -P omarchy-menu-select) || { echo "Missing required command: omarchy-menu-select" >&2; exit 1; }
-NOTIFY_BIN=$(type -P omarchy-notification-send) || { echo "Missing required command: omarchy-notification-send" >&2; exit 1; }
+# Absolute helper paths, fail fast.
+require() { local var=$1 cmd=$2 p; p=$(type -P "$cmd") || { echo "Missing required command: $cmd" >&2; exit 1; }; printf -v "$var" '%s' "$p"; }
+require HYPRCTL_BIN hyprctl
+require JQ_BIN jq
+require TIMEOUT_BIN timeout
+require HEAD_BIN head
+require MENU_BIN omarchy-menu-select
+require NOTIFY_BIN omarchy-notification-send
 NOTIFY_SEND_BIN=$(type -P notify-send || true)
 
 notify() {
