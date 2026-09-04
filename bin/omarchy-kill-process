@@ -130,15 +130,12 @@ if ! choice=$(printf "%s\n" "${options[@]}" | "$TIMEOUT_BIN" 90 "$MENU_BIN" "Kil
 fi
 [[ -n "${choice:-}" ]] || exit 0
 
-# Static list: re-exec for a fresh snapshot.
-if [[ "$choice" == Refresh* ]]; then
-  exec "$0"
-fi
-
 # Resolve the exact process by menu position — never by re-parsing display text.
 # The subtext embeds attacker-controlled cmdline (args), so a greedy "(pid)"
 # parse could be hijacked with a crafted "(digits)" in args and misdirect the
 # kill even though revalidation would then check the wrong PID.
+# NOTE: Refresh is matched positionally (options[0]) below, not by prefix:
+# a crafted comm starting with "Refresh" must never shadow the refresh row.
 idx=-1
 for i in "${!options[@]}"; do
   if [[ "${options[$i]#*$'\t'}" == "$choice" ]]; then
@@ -146,7 +143,11 @@ for i in "${!options[@]}"; do
     break
   fi
 done
-if (( idx <= 0 )); then
+# Static list: re-exec for a fresh snapshot.
+if (( idx == 0 )); then
+  exec "$0"
+fi
+if (( idx < 0 )); then
   echo "Could not match selection to a process." >&2
   notify "Kill" "Could not read selection" -g 󰋊
   exit 1
@@ -180,7 +181,7 @@ if [[ -z "$mem" ]]; then
   exit 0
 fi
 
-cpu_now=$(live_cpu "$pid" 0.3 | "$AWK_BIN" '{print $2}' | "$HEAD_BIN" -c 64)
+cpu_now=$(live_cpu "$pid" 0.3 | "$AWK_BIN" '{print $2}' | "$HEAD_BIN" -c 64 || true)
 
 # Revalidate before confirmation: pid may have been reused during sampling.
 revalidate_pid "$pid" "$orig_start" "$orig_comm"
@@ -312,6 +313,10 @@ case "$pidfd_rc" in
   2) ;; # pidfd unavailable: legacy PID fallback below (ms-scale window)
   *) echo "Process $pid could not be terminated (helper error $pidfd_rc)." >&2; exit 1 ;;
 esac
+
+# Fresh revalidation: the pidfd attempt above (python startup on ENOSYS boxes)
+# leaves a reuse window after the pre-TERM check, so re-check before signalling.
+revalidate_pid "$pid" "$orig_start" "$orig_comm"
 
 if kill -TERM "$pid" 2>/dev/null; then
   for _ in 1 2 3 4 5 6 7 8 9 10; do
