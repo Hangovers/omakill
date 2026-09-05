@@ -1,7 +1,7 @@
 # Omakill
 
-Force-close frozen apps from the Omarchy menu (`SUPER+SPACE → kill`), with
-an optional skull button for the bar. Three actions, no new daemons:
+Kill any app or process from the Omarchy menu (`SUPER+SPACE → kill`), or from
+the skull button on your bar. Three fast actions, no background daemons:
 
 * **By clicking** — `hyprctl kill` xkill-style with a hint toast
 * **Window** — pick an open window from the native menu
@@ -32,7 +32,7 @@ Searching `kill` shows only the `Kill` parent; enter it for the three
 actions.
 
 Requirements: Omarchy Quattro, `hyprctl`, `jq` — all stock. No extra
-packages, no background services, no sudo anywhere.
+packages, no background services, no elevation required.
 
 ## Skull button (optional)
 
