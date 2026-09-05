@@ -2,17 +2,17 @@
   "schemaVersion": 1,
   "id": "io.github.hangovers.omakill",
   "name": "Omakill",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "author": "hangovers",
   "license": "MIT",
-  "description": "Force-close frozen apps from the bar: click-to-kill, window and process pickers.",
+  "description": "Kill any app or process from SUPER+SPACE → Kill or the skull bar button. Three fast actions with zero new daemons: 1) Click to kill (xkill-style pointer target with hint toast), 2) Window picker (clean native selection by app title/PID, no raw addresses), 3) Process picker (live /proc CPU/MEM top-200 with confirm, PID 1/self guards, pidfd-pinned TERM→KILL). Built exclusively for Omarchy using stock system tools.",
   "kinds": ["bar-widget"],
   "entryPoints": {
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
     "displayName": "Omakill",
-    "description": "Kill menu for frozen apps (click, window, process).",
+    "description": "Kill menu with click-to-kill, window, and process pickers.",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right"
